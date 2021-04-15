@@ -1,0 +1,6 @@
+This driver comes https://github.com/cilynx/rtl88x2bu
+
+The 'Makefile' needs to be changed:
+
+CONFIG_PLATFORM_I386_PC = n
+CONFIG_PLATFORM_ARM_RPI = y

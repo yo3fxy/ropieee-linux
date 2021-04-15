@@ -1,0 +1,8 @@
+This driver comes https://github.com/lwfinger/rtl8723bu
+
+The 'Makefile' needs to be changed:
+
+* Disable 'concurrent' mode by commenting out the line:
+
+# EXTRA_CFLAGS += -DCONFIG_CONCURRENT_MODE
+

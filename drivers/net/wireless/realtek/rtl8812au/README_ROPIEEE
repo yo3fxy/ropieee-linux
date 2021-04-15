@@ -1,0 +1,13 @@
+This driver comes from: https://github.com/aircrack-ng/rtl8812au
+
+The 'Makefile' needs to be changed:
+
+CONFIG_PLATFORM_I386_PC = n
+CONFIG_PLATFORM_ARM_RPI = y
+
+history:
+--------
+
+2020/12/09: switch back to driver from https://github.com/gordboy/rtl8812au-5.9.3.2
+            reason is that with the latest 5.4 kernel the 8812au driver does not work (tested with the TP-Link Archer T4U)
+
