@@ -1,6 +1,8 @@
 # Administrative Note
 
 As of upstream version 5.6.1, I'm moving away from individual repositories for each upstream version in favor of a single repository with version-based branches.  Hopefully, this will help with clutter and URL consistency moving forward.  The archived repositories are available here:
+* [rtl88x2BU_WiFi_linux_v5.6.1.6_35492.20191025_COEX20180928-6a6a](https://github.com/cilynx/rtl88x2bu/tree/5.6.1.6_35492.20191025_COEX20180928-6a6a)
+* [rtl88x2BU_WiFi_linux_v5.6.1_30362.20181109_COEX20180928-6a6a](https://github.com/cilynx/rtl88x2bu/tree/5.6.1_30362.20181109_COEX20180928-6a6a)
 * [rtl88x2BU_WiFi_linux_v5.3.1_27678.20180430_COEX20180427-5959](https://github.com/cilynx/rtl88x2BU_WiFi_linux_v5.3.1_27678.20180430_COEX20180427-5959)
 * [rtl88x2BU_WiFi_linux_v5.2.4.4_26334.20180126_COEX20171012-5044](https://github.com/cilynx/rtl88x2BU_WiFi_linux_v5.2.4.4_26334.20180126_COEX20171012-5044)
 * [rtl88x2BU_WiFi_linux_v5.2.4.4_25643.20171212_COEX20171012-5044](https://github.com/cilynx/rtl88x2BU_WiFi_linux_v5.2.4.4_25643.20171212_COEX20171012-5044)
@@ -10,41 +12,49 @@ As of upstream version 5.6.1, I'm moving away from individual repositories for e
 
 Updated driver for rtl88x2bu wifi adaptors based on Realtek's source distributed with myriad adapters.
 
-Realtek's 5.6.1 source was found bundled with the [Cudy WU1200 AC1200 High Gain USB Wi-Fi Adapter](https://amzn.to/351ADVq) and can be downloaded from [Cudy's website](http://www.cudytech.com/productinfo/517558.html).
+Realtek's 5.6.1.6 source was found bundled with the [Cudy WU1200 AC1200 High Gain USB Wi-Fi Adapter](https://amzn.to/351ADVq) and can be downloaded from [Cudy's website](http://www.cudytech.com/wu1200_software_download).
 
 Build confirmed on:
 
 ```
-Linux 5.6.0-gentoo #1 SMP Tue Mar 31 09:56:02 JST 2020 GenuineIntel GNU/Linux gcc (Gentoo 9.3.0 p1) 9.3.0
-```
-```
-Linux DELL_XPS_UBUNTU_20.04 5.4.0-42-generic #46-Ubuntu SMP Fri Jul 10 00:24:02 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
-```
-```
-Linux ThinkPad-P52 5.4.0-9-generic #12-Ubuntu SMP Mon Dec 16 22:34:19 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
-```
-```
-Linux version 5.3.0-050300-generic (kernel@sita) (gcc version 9.2.1 20190909 (Ubuntu 9.2.1-8ubuntu1)) #201909152230 SMP Sun Sep 15 22:32:54 UTC 2019
-```
-```
-Linux version 5.2.0-2-amd64 (debian-kernel@lists.debian.org) (gcc version 8.3.0 (Debian 8.3.0-21)) #1 SMP Debian 5.2.9-2 (2019-08-21)
-```
-```
-Linux version 5.8.0-3-amd64 (debian-kernel@lists.debian.org) (gcc-10 (Debian 10.2.0-13) 10.2.0, GNU ld (GNU Binutils for Debian) 2.35.1) #1 SMP Debian 5.8.14-1 (2020-10-10)
+Linux version 5.4.0-4-amd64 (debian-kernel@lists.debian.org) (gcc version 9.2.1 20200203 (Debian 9.2.1-28)) #1 SMP Debian 5.4.19-1 (2020-02-13)
 ```
 
+## Using and Installing the Driver
 
-## DKMS installation
+### Simple Usage
 
-```bash
-cd rtl88x2bu
-VER=$(sed -n 's/\PACKAGE_VERSION="\(.*\)"/\1/p' dkms.conf)
-sudo rsync -rvhP ./ /usr/src/rtl88x2bu-${VER}
-sudo dkms add -m rtl88x2bu -v ${VER}
-sudo dkms build -m rtl88x2bu -v ${VER}
-sudo dkms install -m rtl88x2bu -v ${VER}
-sudo modprobe 88x2bu
-```
+In order to make direct use of the driver it should suffice to build the driver
+with `make` and to load it with `insmod 88x2bu.ko`. This will allow you
+to use the driver directly without changing your system persistently.
+
+It might happen that your system freezes instantaneously. Ensure to not loose
+important work by saving and such beforehand.
+
+### DKMS installation
+
+If you want to have the driver available at startup, it will be convenient to
+register it in DKMS. An executable explanation of how to do so can be found in
+the script `deploy.sh`. Since registering a kernel module in DKMS is a major
+intervention, only execute it if you understand what the script does.
+
+### Known Problems
+
+Some users reported problems due to `Unknown symbol in module`. This can be
+caused by old deployments of the driver still being present in the systems
+directories. One solution reported was to forcefully remove all old driver
+modules:
+
+    sudo dkms remove rtl88x2bu/5.8.7.4 --all
+    find /lib/modules -name cfg80211.ko -ls
+    sudo rm -f /lib/modules/*/updates/net/wireless/cfg80211.ko
+    
+    
+This can also be caused by cfg80211 module not being present in the kernel.
+You can remedy this by running:
+
+    sudo modprobe cfg80211
+
 
 ## Raspberry Pi Access Point
 
@@ -164,4 +174,8 @@ wlx74ee2ae24062  IEEE 802.11an  ESSID:"borg"  Nickname:"<WIFI@REALTEK>"
           Tx excessive retries:0  Invalid misc:0   Missed beacon:0
 
 ```
-If you want to setup masquerading or bridging, check out [the official Raspberry Pi docs](https://www.raspberrypi.org/documentation/configuration/wireless/access-point.md).
+If you want to setup
+[masquerading](https://www.raspberrypi.org/documentation/configuration/wireless/access-point-routed.md)
+or
+[bridging](https://www.raspberrypi.org/documentation/configuration/wireless/access-point-bridged.md),
+check out the official Raspberry Pi docs.
