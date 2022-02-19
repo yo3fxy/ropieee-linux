@@ -38,7 +38,7 @@
 						data-lanes = <1>;
 						clock-noncontinuous;
 						link-frequencies =
-							/bits/ 64 <456000000>;
+							/bits/ 64 <240000000>;
 					};
 				};
 			};
@@ -49,6 +49,7 @@
 		target = <&csi1>;
 		csi: __overlay__ {
 			status = "okay";
+			brcm,media-controller;
 
 			port {
 				csi1_ep: endpoint {
