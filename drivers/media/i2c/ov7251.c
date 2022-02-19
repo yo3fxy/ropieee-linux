@@ -1154,8 +1154,10 @@ static const struct v4l2_subdev_ops ov7251_subdev_ops = {
 
 static int ov7251_check_hwcfg(struct ov7251 *ov7251)
 {
-	struct v4l2_fwnode_device_properties props;
-	struct device *dev = &client->dev;
+	struct fwnode_handle *fwnode = dev_fwnode(ov7251->dev);
+	struct v4l2_fwnode_endpoint bus_cfg = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY,
+	};
 	struct fwnode_handle *endpoint;
 	bool freq_found;
 	int i, j;
@@ -1332,7 +1334,10 @@ static int ov7251_probe(struct i2c_client *client)
 
 	mutex_init(&ov7251->lock);
 
-	v4l2_ctrl_handler_init(&ov7251->ctrls, 9);
+	ov7251->current_mode = &ov7251_mode_info_data[0];
+	ov7251->current_ival = &ov7251_frame_ival_info_data[0];
+
+	v4l2_ctrl_handler_init(&ov7251->ctrls, 11);
 	ov7251->ctrls.lock = &ov7251->lock;
 
 	v4l2_ctrl_new_std(&ov7251->ctrls, &ov7251_ctrl_ops,
