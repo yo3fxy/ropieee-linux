@@ -817,10 +817,8 @@ void vc4_hvs_atomic_enable(struct drm_crtc *crtc,
 {
 	struct drm_device *dev = crtc->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
-	struct vc4_hvs *hvs = vc4->hvs;
 	struct drm_display_mode *mode = &crtc->state->adjusted_mode;
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
-	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc->state);
 	bool oneshot = vc4_crtc->feeds_txp;
 
 	vc4_hvs_install_dlist(crtc);
@@ -852,6 +850,7 @@ void vc4_hvs_atomic_flush(struct drm_crtc *crtc,
 	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc->state);
 	unsigned int channel = vc4_state->assigned_channel;
 	struct drm_plane *plane;
+	struct vc4_plane_state *vc4_plane_state;
 	bool debug_dump_regs = false;
 	bool enable_bg_fill = false;
 	u32 __iomem *dlist_start, *dlist_next;
@@ -869,9 +868,6 @@ void vc4_hvs_atomic_flush(struct drm_crtc *crtc,
 
 	/* Copy all the active planes' dlist contents to the hardware dlist. */
 	drm_atomic_crtc_for_each_plane(plane, crtc) {
-		struct vc4_plane_state *vc4_plane_state =
-			to_vc4_plane_state(plane->state);
-
 		/* Is this the first active plane? */
 		if (dlist_next == dlist_start) {
 			/* We need to enable background fill when a plane
@@ -882,16 +878,15 @@ void vc4_hvs_atomic_flush(struct drm_crtc *crtc,
 			 * already needs it or all planes on top blend from
 			 * the first or a lower plane.
 			 */
+			vc4_plane_state = to_vc4_plane_state(plane->state);
 			enable_bg_fill = vc4_plane_state->needs_bg_fill;
 		}
 
-		dlist_next += vc4_plane_write_dlist(hvs, vc4_state,
-						    vc4_plane_state, dlist_next);
+		dlist_next += vc4_plane_write_dlist(plane, dlist_next);
 	}
 
-	hvs->fifo[channel].shadow[dlist_next++] = SCALER_CTL0_END;
-	hvs->fifo[channel].start = vc4_state->mm.start;
-	hvs->fifo[channel].size = vc4_state->mm.size;
+	writel(SCALER_CTL0_END, dlist_next);
+	dlist_next++;
 
 	WARN_ON(!vc4_state->mm);
 	WARN_ON_ONCE(dlist_next - dlist_start != vc4_state->mm->mm_node.size);
@@ -953,8 +948,7 @@ void vc4_hvs_mask_underrun(struct vc4_hvs *hvs, int channel)
 {
 	u32 dispctrl = HVS_READ(SCALER_DISPCTRL);
 
-	dispctrl &= ~(vc4->hvs->hvs5 ? SCALER5_DISPCTRL_DSPEISLUR(channel) :
-				       SCALER_DISPCTRL_DSPEISLUR(channel));
+	dispctrl &= ~SCALER_DISPCTRL_DSPEISLUR(channel);
 
 	HVS_WRITE(SCALER_DISPCTRL, dispctrl);
 }
@@ -963,8 +957,7 @@ void vc4_hvs_unmask_underrun(struct vc4_hvs *hvs, int channel)
 {
 	u32 dispctrl = HVS_READ(SCALER_DISPCTRL);
 
-	dispctrl |= vc4->hvs->hvs5 ? SCALER5_DISPCTRL_DSPEISLUR(channel) :
-				     SCALER_DISPCTRL_DSPEISLUR(channel);
+	dispctrl |= SCALER_DISPCTRL_DSPEISLUR(channel);
 
 	HVS_WRITE(SCALER_DISPSTAT,
 		  SCALER_DISPSTAT_EUFLOW(channel));
@@ -1009,14 +1002,9 @@ static irqreturn_t vc4_hvs_irq_handler(int irq, void *data)
 	}
 
 	/* Clear every per-channel interrupt flag. */
-	if (vc4->hvs->hvs5)
-		HVS_WRITE(SCALER_DISPSTAT, SCALER5_DISPSTAT_IRQMASK(0) |
-					   SCALER5_DISPSTAT_IRQMASK(1) |
-					   SCALER5_DISPSTAT_IRQMASK(2));
-	else
-		HVS_WRITE(SCALER_DISPSTAT, SCALER_DISPSTAT_IRQMASK(0) |
-					   SCALER_DISPSTAT_IRQMASK(1) |
-					   SCALER_DISPSTAT_IRQMASK(2));
+	HVS_WRITE(SCALER_DISPSTAT, SCALER_DISPSTAT_IRQMASK(0) |
+				   SCALER_DISPSTAT_IRQMASK(1) |
+				   SCALER_DISPSTAT_IRQMASK(2));
 
 	return irqret;
 }
@@ -1113,37 +1101,19 @@ static int vc4_hvs_bind(struct device *dev, struct device *master, void *data)
 	 * be unused.
 	 */
 	dispctrl &= ~SCALER_DISPCTRL_DSP3_MUX_MASK;
-	if (!hvs->hvs5)
-		dispctrl &= ~(SCALER_DISPCTRL_DMAEIRQ |
-			      SCALER_DISPCTRL_SLVWREIRQ |
-			      SCALER_DISPCTRL_SLVRDEIRQ |
-			      SCALER_DISPCTRL_DSPEIEOF(0) |
-			      SCALER_DISPCTRL_DSPEIEOF(1) |
-			      SCALER_DISPCTRL_DSPEIEOF(2) |
-			      SCALER_DISPCTRL_DSPEIEOLN(0) |
-			      SCALER_DISPCTRL_DSPEIEOLN(1) |
-			      SCALER_DISPCTRL_DSPEIEOLN(2) |
-			      SCALER_DISPCTRL_DSPEISLUR(0) |
-			      SCALER_DISPCTRL_DSPEISLUR(1) |
-			      SCALER_DISPCTRL_DSPEISLUR(2) |
-			      SCALER_DISPCTRL_SCLEIRQ);
-	else
-		dispctrl &= ~(SCALER5_DISPCTRL_DMAEIRQ |
-			      SCALER5_DISPCTRL_SLVEIRQ |
-			      SCALER5_DISPCTRL_DSPEIEOF(0) |
-			      SCALER5_DISPCTRL_DSPEIEOF(1) |
-			      SCALER5_DISPCTRL_DSPEIEOF(2) |
-			      SCALER5_DISPCTRL_DSPEIEOLN(0) |
-			      SCALER5_DISPCTRL_DSPEIEOLN(1) |
-			      SCALER5_DISPCTRL_DSPEIEOLN(2) |
-			      SCALER5_DISPCTRL_DSPEISLUR(0) |
-			      SCALER5_DISPCTRL_DSPEISLUR(1) |
-			      SCALER5_DISPCTRL_DSPEISLUR(2) |
-			      SCALER5_DISPCTRL_DSPVSTART(0) |
-			      SCALER5_DISPCTRL_DSPVSTART(1) |
-			      SCALER5_DISPCTRL_DSPVSTART(2) |
-			      SCALER_DISPCTRL_SCLEIRQ);
-
+	dispctrl &= ~(SCALER_DISPCTRL_DMAEIRQ |
+		      SCALER_DISPCTRL_SLVWREIRQ |
+		      SCALER_DISPCTRL_SLVRDEIRQ |
+		      SCALER_DISPCTRL_DSPEIEOF(0) |
+		      SCALER_DISPCTRL_DSPEIEOF(1) |
+		      SCALER_DISPCTRL_DSPEIEOF(2) |
+		      SCALER_DISPCTRL_DSPEIEOLN(0) |
+		      SCALER_DISPCTRL_DSPEIEOLN(1) |
+		      SCALER_DISPCTRL_DSPEIEOLN(2) |
+		      SCALER_DISPCTRL_DSPEISLUR(0) |
+		      SCALER_DISPCTRL_DSPEISLUR(1) |
+		      SCALER_DISPCTRL_DSPEISLUR(2) |
+		      SCALER_DISPCTRL_SCLEIRQ);
 	dispctrl |= VC4_SET_FIELD(2, SCALER_DISPCTRL_DSP3_MUX);
 
 	HVS_WRITE(SCALER_DISPCTRL, dispctrl);

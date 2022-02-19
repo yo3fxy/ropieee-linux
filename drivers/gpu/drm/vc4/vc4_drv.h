@@ -344,14 +344,6 @@ struct vc4_hvs {
 
 	/* HVS version 5 flag, therefore requires updated dlist structures */
 	bool hvs5;
-
-	spinlock_t hw_dlist_lock;
-	struct {
-		unsigned int start;
-		unsigned int size;
-		u32 shadow[2048];
-		bool pending;
-	} fifo[3];
 };
 
 struct vc4_plane {
@@ -391,11 +383,6 @@ struct vc4_plane_state {
 	 * hardware at vc4_crtc_atomic_flush() time.
 	 */
 	u32 __iomem *hw_dlist;
-
-	/* Offset where the plane's dlist was last stored in the
-	 * shadow dlist bucket at vc4_crtc_atomic_flush() time.
-	 */
-	unsigned int dlist_offset;
 
 	/* Clipped coordinates of the plane on the display. */
 	int crtc_x, crtc_y, crtc_w, crtc_h;
@@ -1008,10 +995,7 @@ int vc4_kms_load(struct drm_device *dev);
 struct drm_plane *vc4_plane_init(struct drm_device *dev,
 				 enum drm_plane_type type);
 int vc4_plane_create_additional_planes(struct drm_device *dev);
-u32 vc4_plane_write_dlist(struct vc4_hvs *hvs,
-			  struct vc4_crtc_state *vc4_crtc_state,
-			  struct vc4_plane_state *vc4_plane_state,
-			  unsigned dlist_offset);
+u32 vc4_plane_write_dlist(struct drm_plane *plane, u32 __iomem *dlist);
 u32 vc4_plane_dlist_size(const struct drm_plane_state *state);
 void vc4_plane_async_set_fb(struct drm_plane *plane,
 			    struct drm_framebuffer *fb);
