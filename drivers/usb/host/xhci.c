@@ -1091,6 +1091,7 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 	int			retval = 0;
 	bool			comp_timer_running = false;
 	bool			pending_portevent = false;
+	bool			reinit_xhc = false;
 
 	if (!hcd->state)
 		return 0;
@@ -1107,10 +1108,11 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 	set_bit(HCD_FLAG_HW_ACCESSIBLE, &xhci->shared_hcd->flags);
 
 	spin_lock_irq(&xhci->lock);
-	if ((xhci->quirks & XHCI_RESET_ON_RESUME) || xhci->broken_suspend)
-		hibernated = true;
 
-	if (!hibernated) {
+	if (hibernated || xhci->quirks & XHCI_RESET_ON_RESUME || xhci->broken_suspend)
+		reinit_xhc = true;
+
+	if (!reinit_xhc) {
 		/*
 		 * Some controllers might lose power during suspend, so wait
 		 * for controller not ready bit to clear, just as in xHC init.
@@ -1143,12 +1145,17 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 			spin_unlock_irq(&xhci->lock);
 			return -ETIMEDOUT;
 		}
-		temp = readl(&xhci->op_regs->status);
 	}
 
-	/* If restore operation fails, re-initialize the HC during resume */
-	if ((temp & STS_SRE) || hibernated) {
+	temp = readl(&xhci->op_regs->status);
 
+	/* re-initialize the HC on Restore Error, or Host Controller Error */
+	if (temp & (STS_SRE | STS_HCE)) {
+		reinit_xhc = true;
+		xhci_warn(xhci, "xHC error in resume, USBSTS 0x%x, Reinit\n", temp);
+	}
+
+	if (reinit_xhc) {
 		if ((xhci->quirks & XHCI_COMP_MODE_QUIRK) &&
 				!(xhci_all_ports_seen_u0(xhci))) {
 			del_timer_sync(&xhci->comp_mode_recovery_timer);
@@ -1388,9 +1395,12 @@ static void xhci_unmap_temp_buf(struct usb_hcd *hcd, struct urb *urb)
 static int xhci_map_urb_for_dma(struct usb_hcd *hcd, struct urb *urb,
 				gfp_t mem_flags)
 {
+	unsigned int i, maxpacket;
+	struct scatterlist *sg;
 	struct xhci_hcd *xhci;
 
 	xhci = hcd_to_xhci(hcd);
+	maxpacket = usb_endpoint_maxp(&urb->ep->desc);
 
 	if (xhci_urb_suitable_for_idt(urb))
 		return 0;
@@ -1398,6 +1408,16 @@ static int xhci_map_urb_for_dma(struct usb_hcd *hcd, struct urb *urb,
 	if (xhci->quirks & XHCI_SG_TRB_CACHE_SIZE_QUIRK) {
 		if (xhci_urb_temp_buffer_required(hcd, urb))
 			return xhci_map_temp_buffer(hcd, urb);
+	}
+
+	if (xhci->quirks & XHCI_VLI_SS_BULK_OUT_BUG &&
+	    usb_endpoint_is_bulk_out(&urb->ep->desc) &&
+	    urb->dev->speed >= USB_SPEED_SUPER &&
+	    urb->transfer_buffer_length != 0) {
+		for_each_sg(urb->sg, sg, urb->num_sgs, i) {
+			if (sg->length % maxpacket)
+				return xhci_map_temp_buffer(hcd, urb);
+		}
 	}
 	return usb_hcd_map_urb_for_dma(hcd, urb, mem_flags);
 }
@@ -1412,7 +1432,8 @@ static void xhci_unmap_urb_for_dma(struct usb_hcd *hcd, struct urb *urb)
 	if (urb->num_sgs && (urb->transfer_flags & URB_DMA_MAP_SINGLE))
 		unmap_temp_buf = true;
 
-	if ((xhci->quirks & XHCI_SG_TRB_CACHE_SIZE_QUIRK) && unmap_temp_buf)
+	if ((xhci->quirks & (XHCI_SG_TRB_CACHE_SIZE_QUIRK | XHCI_VLI_SS_BULK_OUT_BUG))
+	     && unmap_temp_buf)
 		xhci_unmap_temp_buf(hcd, urb);
 	else
 		usb_hcd_unmap_urb_for_dma(hcd, urb);
@@ -1707,9 +1728,12 @@ static int xhci_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 	struct urb_priv	*urb_priv;
 	int num_tds;
 
-	if (!urb || xhci_check_args(hcd, urb->dev, urb->ep,
-					true, true, __func__) <= 0)
+	if (!urb)
 		return -EINVAL;
+	ret = xhci_check_args(hcd, urb->dev, urb->ep,
+					true, true, __func__);
+	if (ret <= 0)
+		return ret ? ret : -EINVAL;
 
 	slot_id = urb->dev->slot_id;
 	ep_index = xhci_get_endpoint_index(&urb->ep->desc);
@@ -3426,7 +3450,7 @@ static int xhci_check_streams_endpoint(struct xhci_hcd *xhci,
 		return -EINVAL;
 	ret = xhci_check_args(xhci_to_hcd(xhci), udev, ep, 1, true, __func__);
 	if (ret <= 0)
-		return -EINVAL;
+		return ret ? ret : -EINVAL;
 	if (usb_ss_max_streams(&ep->ss_ep_comp) == 0) {
 		xhci_warn(xhci, "WARN: SuperSpeed Endpoint Companion"
 				" descriptor for ep 0x%x does not support streams\n",

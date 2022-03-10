@@ -139,6 +139,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	mmc.dtbo \
 	mpu6050.dtbo \
 	mz61581.dtbo \
+	ov2311.dtbo \
 	ov5647.dtbo \
 	ov7251.dtbo \
 	ov9281.dtbo \
@@ -251,6 +252,8 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	w1-gpio.dtbo \
 	w1-gpio-pullup.dtbo \
 	w5500.dtbo \
+	waveshare-can-fd-hat-mode-a.dtbo \
+	waveshare-can-fd-hat-mode-b.dtbo \
 	wittypi.dtbo \
 	wm8960-soundcard.dtbo
 
