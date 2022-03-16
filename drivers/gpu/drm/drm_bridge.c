@@ -462,9 +462,6 @@ EXPORT_SYMBOL(drm_bridge_chain_disable);
  * Calls &drm_bridge_funcs.post_disable op for all the bridges in the
  * encoder chain, starting from the first bridge to the last. These are called
  * after completing the encoder's prepare op.
- * If a bridge sets the DRM_BRIDGE_OP_UPSTREAM_FIRST, then the post_disable for
- * that bridge will be called before the previous one to reverse the pre_enable
- * calling direction.
  *
  * If a bridge sets @pre_enable_upstream_first, then the @post_disable for that
  * bridge will be called before the previous one to reverse the @pre_enable
@@ -475,40 +472,6 @@ EXPORT_SYMBOL(drm_bridge_chain_disable);
 void drm_bridge_chain_post_disable(struct drm_bridge *bridge)
 {
 	drm_atomic_bridge_chain_post_disable(bridge, NULL);
-	struct drm_bridge *next, *limit;
-		limit = NULL;
-
-		if (!list_is_last(&bridge->chain_node, &encoder->bridge_chain)) {
-			next = list_next_entry(bridge, chain_node);
-
-			if (next->ops & DRM_BRIDGE_OP_UPSTREAM_FIRST) {
-				limit = next;
-
-				list_for_each_entry_from(next, &encoder->bridge_chain,
-							 chain_node) {
-					if (!(next->ops &
-						DRM_BRIDGE_OP_UPSTREAM_FIRST)) {
-						next = list_prev_entry(next, chain_node);
-						limit = next;
-						break;
-					}
-				}
-
-				list_for_each_entry_from_reverse(next, &encoder->bridge_chain,
-								 chain_node) {
-					if (next == bridge)
-						break;
-
-					if (next->funcs->post_disable)
-						next->funcs->post_disable(next);
-				}
-			}
-		}
-
-
-		if (limit)
-			bridge = limit;
-
 }
 EXPORT_SYMBOL(drm_bridge_chain_post_disable);
 
@@ -549,8 +512,6 @@ EXPORT_SYMBOL(drm_bridge_chain_mode_set);
  * Calls &drm_bridge_funcs.pre_enable op for all the bridges in the encoder
  * chain, starting from the last bridge to the first. These are called
  * before calling the encoder's commit op.
- * If a bridge sets the DRM_BRIDGE_OP_UPSTREAM_FIRST, then the pre_enable for
- * the previous bridge will be called before pre_enable of this bridge.
  *
  * If a bridge sets @pre_enable_upstream_first, then the @pre_enable for the
  * previous bridge will be called before @pre_enable of this bridge.
@@ -560,35 +521,6 @@ EXPORT_SYMBOL(drm_bridge_chain_mode_set);
 void drm_bridge_chain_pre_enable(struct drm_bridge *bridge)
 {
 	drm_atomic_bridge_chain_pre_enable(bridge, NULL);
-
-		if (iter->ops & DRM_BRIDGE_OP_UPSTREAM_FIRST) {
-			next = iter;
-			limit = bridge;
-			list_for_each_entry_from_reverse(next,
-							 &encoder->bridge_chain,
-							 chain_node) {
-				if (next == bridge)
-					break;
-
-				if (!(next->ops &
-					DRM_BRIDGE_OP_UPSTREAM_FIRST)) {
-					limit = list_prev_entry(next, chain_node);
-					break;
-				}
-			}
-
-			list_for_each_entry_from(next, &encoder->bridge_chain, chain_node) {
-				if (next == iter)
-					break;
-
-				if (next->funcs->pre_enable)
-					next->funcs->pre_enable(next);
-			}
-		}
-
-		if (iter->ops & DRM_BRIDGE_OP_UPSTREAM_FIRST)
-			iter = limit;
-
 }
 EXPORT_SYMBOL(drm_bridge_chain_pre_enable);
 
@@ -778,8 +710,6 @@ static void drm_atomic_bridge_call_pre_enable(struct drm_bridge *bridge,
  * &drm_bridge_funcs.pre_enable) op for all the bridges in the encoder chain,
  * starting from the last bridge to the first. These are called before calling
  * &drm_encoder_helper_funcs.atomic_enable
- * If a bridge sets the DRM_BRIDGE_OP_UPSTREAM_FIRST, then the pre_enable for
- * the previous bridge will be called before pre_enable of this bridge.
  *
  * If a bridge sets @pre_enable_upstream_first, then the pre_enable for the
  * upstream bridge will be called before pre_enable of this bridge.
