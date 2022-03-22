@@ -872,10 +872,18 @@ u32 _rtw_down_sema(_sema *sema)
 
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 inline void thread_exit(_completion *comp)
+#else
+inline void kthread_thread_exit(_completion *comp)
+#endif
 {
 #ifdef PLATFORM_LINUX
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 	complete_and_exit(comp, 0);
+#else
+	kthread_complete_and_exit(comp, 0);
+#endif
 #endif
 
 }
@@ -1586,7 +1594,7 @@ int rtw_change_ifname(_adapter *padapter, const char *ifname)
 
 	rtw_init_netdev_name(pnetdev, ifname);
 
-	memcpy(pnetdev->dev_addr, adapter_mac_addr(padapter), ETH_ALEN);
+	eth_hw_addr_set(pnetdev, adapter_mac_addr(padapter));
 
 	if (rtnl_lock_needed)
 		ret = register_netdev(pnetdev);
