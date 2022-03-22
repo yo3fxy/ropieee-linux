@@ -854,9 +854,9 @@ void vc4_hvs_atomic_flush(struct drm_crtc *crtc,
 	bool debug_dump_regs = false;
 	bool enable_bg_fill = false;
 	u32 __iomem *dlist_start, *dlist_next;
+	unsigned int zpos = 0;
+	bool found = false;
 
-	if (vc4_state->assigned_channel == VC4_HVS_CHANNEL_DISABLED)
-		return;
 	if (vc4_state->assigned_channel == VC4_HVS_CHANNEL_DISABLED)
 		return;
 
