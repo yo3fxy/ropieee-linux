@@ -38,6 +38,7 @@
 #include <drm/drm_scdc_helper.h>
 #include <linux/clk.h>
 #include <linux/component.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/of_address.h>
 #include <linux/of_gpio.h>
@@ -86,6 +87,8 @@
 #define VC5_HDMI_VERTB_VSPO_SHIFT		16
 #define VC5_HDMI_VERTB_VSPO_MASK		VC4_MASK(29, 16)
 
+#define VC4_HDMI_MISC_CONTROL_PIXEL_REP_SHIFT	0
+#define VC4_HDMI_MISC_CONTROL_PIXEL_REP_MASK	VC4_MASK(3, 0)
 #define VC5_HDMI_MISC_CONTROL_PIXEL_REP_SHIFT	0
 #define VC5_HDMI_MISC_CONTROL_PIXEL_REP_MASK	VC4_MASK(3, 0)
 
@@ -1197,6 +1200,7 @@ static void vc4_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 					mode->crtc_vsync_end,
 					VC4_HDMI_VERTB_VBP));
 	unsigned long flags;
+	u32 reg;
 
 	spin_lock_irqsave(&vc4_hdmi->hw_lock, flags);
 
@@ -1223,6 +1227,11 @@ static void vc4_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 	HDMI_WRITE(HDMI_VERTB0, vertb_even);
 	HDMI_WRITE(HDMI_VERTB1, vertb);
 
+	reg = HDMI_READ(HDMI_MISC_CONTROL);
+	reg &= ~VC4_HDMI_MISC_CONTROL_PIXEL_REP_MASK;
+	reg |= VC4_SET_FIELD(pixel_rep - 1, VC4_HDMI_MISC_CONTROL_PIXEL_REP);
+	HDMI_WRITE(HDMI_MISC_CONTROL, reg);
+
 	spin_unlock_irqrestore(&vc4_hdmi->hw_lock, flags);
 }
 
@@ -1241,13 +1250,13 @@ static void vc5_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 		     VC4_SET_FIELD(mode->crtc_vsync_start - mode->crtc_vdisplay,
 				   VC5_HDMI_VERTA_VFP) |
 		     VC4_SET_FIELD(mode->crtc_vdisplay, VC5_HDMI_VERTA_VAL));
-	u32 vertb = (VC4_SET_FIELD(0, VC5_HDMI_VERTB_VSPO) |
-		     VC4_SET_FIELD(mode->crtc_vtotal - mode->crtc_vsync_end +
-				   interlaced,
+	u32 vertb = (VC4_SET_FIELD(mode->htotal >> (2 - pixel_rep),
+				   VC5_HDMI_VERTB_VSPO) |
+		     VC4_SET_FIELD(mode->crtc_vtotal - mode->crtc_vsync_end,
 				   VC4_HDMI_VERTB_VBP));
 	u32 vertb_even = (VC4_SET_FIELD(0, VC5_HDMI_VERTB_VSPO) |
 			  VC4_SET_FIELD(mode->crtc_vtotal -
-					mode->crtc_vsync_end,
+					mode->crtc_vsync_end - interlaced,
 					VC4_HDMI_VERTB_VBP));
 	unsigned long flags;
 	unsigned char gcp;
@@ -1323,7 +1332,7 @@ static void vc5_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 
 	reg = HDMI_READ(HDMI_MISC_CONTROL);
 	reg &= ~VC5_HDMI_MISC_CONTROL_PIXEL_REP_MASK;
-	reg |= VC4_SET_FIELD(0, VC5_HDMI_MISC_CONTROL_PIXEL_REP);
+	reg |= VC4_SET_FIELD(pixel_rep - 1, VC5_HDMI_MISC_CONTROL_PIXEL_REP);
 	HDMI_WRITE(HDMI_MISC_CONTROL, reg);
 
 	HDMI_WRITE(HDMI_CLOCK_STOP, 0);
@@ -1817,11 +1826,25 @@ static int vc4_hdmi_encoder_atomic_check(struct drm_encoder *encoder,
 	unsigned long long tmds_rate;
 	int ret;
 
-	if (vc4_hdmi->variant->unsupported_odd_h_timings &&
-	    !(mode->flags & DRM_MODE_FLAG_DBLCLK) &&
-	    ((mode->hdisplay % 2) || (mode->hsync_start % 2) ||
-	     (mode->hsync_end % 2) || (mode->htotal % 2)))
-		return -EINVAL;
+	if (vc4_hdmi->variant->unsupported_odd_h_timings) {
+		if (mode->flags & DRM_MODE_FLAG_DBLCLK) {
+			/* Only try to fixup DBLCLK modes to get 480i and 576i
+			 * working.
+			 * A generic solution for all modes with odd horizontal
+			 * timing values seems impossible based on trying to
+			 * solve it for 1366x768 monitors.
+			 */
+			if ((mode->hsync_start - mode->hdisplay) & 1)
+				mode->hsync_start--;
+			if ((mode->hsync_end - mode->hsync_start) & 1)
+				mode->hsync_end--;
+		}
+
+		/* Now check whether we still have odd values remaining */
+		if ((mode->hdisplay % 2) || (mode->hsync_start % 2) ||
+		    (mode->hsync_end % 2) || (mode->htotal % 2))
+			return -EINVAL;
+	}
 
 	/*
 	 * The 1440p@60 pixel rate is in the same range than the first
