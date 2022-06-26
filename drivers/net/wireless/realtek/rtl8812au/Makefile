@@ -6,6 +6,8 @@ EXTRA_CFLAGS += -Wno-unused-label
 #EXTRA_CFLAGS += -Wno-unused-parameter
 EXTRA_CFLAGS += -Wno-unused-function
 EXTRA_CFLAGS += -Wno-implicit-fallthrough
+EXTRA_CFLAGS += -Wno-cast-function-type
+EXTRA_CFLAGS += -Wno-error=cast-function-type
 #EXTRA_CFLAGS += -Wno-parentheses-equality
 #EXTRA_CFLAGS += -Wno-pointer-bool-conversion
 EXTRA_CFLAGS += -Wno-unknown-pragmas
@@ -164,6 +166,10 @@ CONFIG_PLATFORM_PPC = n
 CONFIG_CUSTOMER_HUAWEI_GENERAL = n
 
 CONFIG_DRVEXT_MODULE = n
+
+ifeq ("","$(wildcard MOK.der)")
+NO_SKIP_SIGN := y
+endif
 
 ifeq ($(CONFIG_RTL8812AU), )
 ifneq (,$(findstring /usr/lib/dkms,$(PATH)))
@@ -1190,6 +1196,7 @@ endif
 
 ifeq ($(CONFIG_PLATFORM_PPC), y)
 EXTRA_CFLAGS += -DCONFIG_BIG_ENDIAN
+EXTRA_CFLAGS += -DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
 SUBARCH := $(shell uname -m | sed -e s/ppc/powerpc/)
 ARCH ?= $(SUBARCH)
 CROSS_COMPILE ?=
@@ -2324,5 +2331,16 @@ clean:
 	cd platform ; rm -fr *.mod.c *.mod *.o .*.cmd *.ko
 	rm -fr Module.symvers ; rm -fr Module.markers ; rm -fr modules.order
 	rm -fr *.mod.c *.mod *.o .*.cmd *.ko *~
-	rm -fr .tmp_versions
+	rm -fr .tmp_versions *.der *.priv
 endif
+
+sign:
+ifeq ($(NO_SKIP_SIGN), y)
+	@openssl req -new -x509 -newkey rsa:2048 -keyout MOK.priv -outform DER -out MOK.der -nodes -days 36500 -subj "/CN=Custom MOK/"
+	@mokutil --import MOK.der
+else
+	echo "Skipping key creation"
+endif
+	@$(KSRC)/scripts/sign-file sha256 MOK.priv MOK.der 88XXau.ko
+
+sign-install: all sign install
