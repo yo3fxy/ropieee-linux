@@ -1875,7 +1875,6 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 	/* XMOS based USB DACs */
 	switch (chip->usb_id) {
 	case USB_ID(0x139f, 0x5504): /* Nagra DAC */
-	case USB_ID(0x20b1, 0x3089): /* Mola-Mola DAC */
 	case USB_ID(0x20b1, 0x3008): /* iFi Audio micro/nano iDSD */
 	case USB_ID(0x1511, 0x0037): /* AURALiC VEGA */
 	case USB_ID(0x20b1, 0x0002): /* Wyred 4 Sound DAC-2 DSD */
