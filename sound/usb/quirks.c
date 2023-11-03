@@ -1945,6 +1945,11 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
 		break;
 
+	case USB_ID(0x4102, 0x1223): /* Astell & Kern PEE51 USB DAC */
+		if (fp->altsetting == 4)
+			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+		break;
+
 	default:
 		break;
 	}
